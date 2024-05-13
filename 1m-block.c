@@ -9,7 +9,9 @@
 #include "parse_header.h"
 #include <string.h>
 
-char *target;
+char *site_list_filename;
+char **site_list;
+int site_count = 0;
 
 void dump(unsigned char* buf, int size) {
     int i;
@@ -21,7 +23,32 @@ void dump(unsigned char* buf, int size) {
     printf("\n");
 }
 
-int check_http(struct nfq_data *tb){
+//for quick-sort
+int compare(const void *a, const void *b){
+    return strcmp(*(const char **)a, *(const char**)b);
+}
+
+int binary_search(char *arr[], int size, const char *target){
+    int left = 0;
+    int right = size - 1;
+    int mid;
+
+    while(left <= right){
+        mid = left + (right - left) / 2;
+        int cmp = strcmp(arr[mid], target);
+
+        if(cmp == 0) return 1;
+        else if(cmp < 0) left = mid + 1;
+        else right = mid - 1;
+    }
+    return 0;
+}
+
+int search_site(const char *host){
+    return binary_search(site_list, site_count, host);
+}
+
+int site_filter(struct nfq_data *tb){
     int len;
     unsigned char *buf;
 
@@ -43,20 +70,26 @@ int check_http(struct nfq_data *tb){
             memcpy(payload, buf + (ipv4_hdr->ip_hl * 4) + (tcp_hdr->th_off * 4), payload_len);
 
             char *host = strstr(payload, "Host: ");
+            free(payload);
+
             if(host != NULL){
                 host += 6;
-                char *newline = strchr(host, '\r\n');
+                char *newline = strchr(host, '\r');
 
                 if(newline != NULL){
                     *newline = '\0';
                 }
-                if(strncmp(host, target, sizeof(target)) == 0){
-                    printf("filtered : %s\n", host);
-                    free(payload);
+
+                int filtered = search_site(host);
+
+                if(filtered){
+                    printf("[filtered] : %s\n", host);
                     return 0;
                 }
+                else{
+                    return 1;
+                }
             }
-            free(payload);
         }
     }
     return 1;
@@ -124,14 +157,39 @@ static int cb(struct nfq_q_handle *qh, struct nfgenmsg *nfmsg,
     u_int32_t id = print_pkt(nfa);
     printf("entering callback\n");
 
-    int forward = check_http(nfa);
+    int forward = site_filter(nfa);
 
-    if(forward){
-        return nfq_set_verdict(qh, id, NF_ACCEPT, 0, NULL);
+    int result = forward == 1 ? nfq_set_verdict(qh, id, NF_ACCEPT, 0, NULL) : nfq_set_verdict(qh, id, NF_DROP, 0, NULL);
+
+    return result;
+}
+
+void parse_sort_sites(){
+    FILE *file = fopen(site_list_filename, "r");
+    if(file == NULL){
+        fprintf(stderr, "Failed to open file : %s\n", site_list_filename);
+        exit(1);
     }
-    else{
-        return nfq_set_verdict(qh, id, NF_DROP, 0, NULL);
+
+    int max_sites = 1000000;
+    site_list = malloc(max_sites * sizeof(char *));
+
+    char line[1024];
+    char *domain;
+
+    while(fgets(line, sizeof(line), file) != NULL){
+        domain = strchr(line, ',');
+        if(domain != NULL){
+            domain++;
+            domain[strcspn(domain, "\n")] = '/0';
+
+            site_list[site_count] = strdup(domain);
+            site_count++;
+        }
     }
+    fclose(file);
+
+    qsort(site_list, site_count, sizeof(char*), compare);
 }
 
 int main(int argc, char **argv)
@@ -144,12 +202,14 @@ int main(int argc, char **argv)
     char buf[4096] __attribute__ ((aligned));
 
     if(argc == 2){
-        target = argv[1];
+        site_list_filename = argv[1];
     }
     else{
-        printf("Usage : syntax : netfilter-test <host>\n");
+        printf("Usage : 1m-block <site list file>\n");
         return -1;
     }
+
+    parse_sort_sites();
 
     printf("opening library handle\n");
     h = nfq_open();
@@ -185,6 +245,8 @@ int main(int argc, char **argv)
 
     fd = nfq_fd(h);
 
+    printf("Waiting for packets...\n");
+
     for (;;) {
         if ((rv = recv(fd, buf, sizeof(buf), 0)) >= 0) {
             printf("pkt received\n");
@@ -219,6 +281,7 @@ int main(int argc, char **argv)
     printf("closing library handle\n");
     nfq_close(h);
 
+    free(site_list);
     exit(0);
 }
 
