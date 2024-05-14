@@ -37,14 +37,19 @@ int binary_search(char *arr[], int size, const char *target){
         mid = left + (right - left) / 2;
         int cmp = strcmp(arr[mid], target);
 
-        if(cmp == 0) return 1;
+        if(cmp == 0){
+            printf("Success search!\n");
+            return 1;
+        }
         else if(cmp < 0) left = mid + 1;
         else right = mid - 1;
     }
+    printf("Fail search....\n");
     return 0;
 }
 
 int search_site(const char *host){
+    printf("search site : %s\n", host);
     return binary_search(site_list, site_count, host);
 }
 
@@ -80,13 +85,17 @@ int site_filter(struct nfq_data *tb){
                     *newline = '\0';
                 }
 
+                printf("*****************************\n");
+                printf("for check : %s\n", host);
                 int filtered = search_site(host);
 
                 if(filtered){
                     printf("[filtered] : %s\n", host);
+                    printf("*****************************\n");
                     return 0;
                 }
                 else{
+                    printf("*****************************\n");
                     return 1;
                 }
             }
@@ -107,43 +116,43 @@ static u_int32_t print_pkt (struct nfq_data *tb)
     ph = nfq_get_msg_packet_hdr(tb);
     if (ph) {
         id = ntohl(ph->packet_id);
-        printf("hw_protocol=0x%04x hook=%u id=%u ",
-               ntohs(ph->hw_protocol), ph->hook, id);
+        //printf("hw_protocol=0x%04x hook=%u id=%u ",
+        //       ntohs(ph->hw_protocol), ph->hook, id);
     }
 
     hwph = nfq_get_packet_hw(tb);
     if (hwph) {
         int i, hlen = ntohs(hwph->hw_addrlen);
 
-        printf("hw_src_addr=");
-        for (i = 0; i < hlen-1; i++)
-            printf("%02x:", hwph->hw_addr[i]);
-        printf("%02x ", hwph->hw_addr[hlen-1]);
+        //printf("hw_src_addr=");
+        //for (i = 0; i < hlen-1; i++)
+        //    printf("%02x:", hwph->hw_addr[i]);
+        //printf("%02x ", hwph->hw_addr[hlen-1]);
     }
 
     mark = nfq_get_nfmark(tb);
     if (mark)
-        printf("mark=%u ", mark);
+        //printf("mark=%u ", mark);
 
     ifi = nfq_get_indev(tb);
     if (ifi)
-        printf("indev=%u ", ifi);
+        //printf("indev=%u ", ifi);
 
     ifi = nfq_get_outdev(tb);
     if (ifi)
-        printf("outdev=%u ", ifi);
+        //printf("outdev=%u ", ifi);
     ifi = nfq_get_physindev(tb);
     if (ifi)
-        printf("physindev=%u ", ifi);
+        //printf("physindev=%u ", ifi);
 
     ifi = nfq_get_physoutdev(tb);
     if (ifi)
-        printf("physoutdev=%u ", ifi);
+        //printf("physoutdev=%u ", ifi);
 
     ret = nfq_get_payload(tb, &data);
     if (ret >= 0){
-        printf("payload_len=%d\n", ret);
-        dump(data, ret);
+        //printf("payload_len=%d\n", ret);
+        //dump(data, ret);
     }
     fputc('\n', stdout);
 
@@ -155,7 +164,7 @@ static int cb(struct nfq_q_handle *qh, struct nfgenmsg *nfmsg,
               struct nfq_data *nfa, void *data)
 {
     u_int32_t id = print_pkt(nfa);
-    printf("entering callback\n");
+    //printf("entering callback\n");
 
     int forward = site_filter(nfa);
 
@@ -181,7 +190,7 @@ void parse_sort_sites(){
         domain = strchr(line, ',');
         if(domain != NULL){
             domain++;
-            domain[strcspn(domain, "\n")] = '/0';
+            domain[strcspn(domain, "\n")] = '\0';
 
             site_list[site_count] = strdup(domain);
             site_count++;
